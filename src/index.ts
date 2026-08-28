@@ -6,6 +6,7 @@ dotenv.config({ path: path.resolve(process.cwd(), "../../.env.local") });
 dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
 
 import QRCode from "qrcode-terminal";
+import QRImage from "qrcode";
 import { Boom } from "@hapi/boom";
 import {
   makeWASocket,
@@ -137,27 +138,40 @@ async function connect(): Promise<void> {
 
   sock.ev.on("creds.update", saveCreds);
 
-  sock.ev.on("connection.update", (update: Partial<ConnectionState>) => {
+  sock.ev.on("connection.update", async (update: Partial<ConnectionState>) => {
     const { qr, connection, lastDisconnect } = update;
     if (qr) {
-      QRCode.generate(qr, { small: true });
-      console.log(
-        "\nEscaneá el QR con tu WhatsApp (menú > Dispositivos vinculados).",
-      );
+      const pairingPhone = process.env.BOT_PAIRING_PHONE;
+      if (pairingPhone) {
+        try {
+          const code = await sock.requestPairingCode(pairingPhone);
+          console.log(
+            `\n📲 Pairing code: ${code}\nIngresalo en WhatsApp > Dispositivos vinculados > Vincular con número de teléfono.`,
+          );
+        } catch (e) {
+          console.error("Error pidiendo pairing code:", e);
+        }
+      } else {
+        QRCode.generate(qr, { small: true });
+        try {
+          const dataUrl = await QRImage.toDataURL(qr, { width: 320, margin: 1 });
+          const shortUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(qr)}`;
+          console.log(
+            `\n📷 Abrí este link en tu navegador para ver el QR y escanearlo:\n${shortUrl}\n` +
+              `\n(Si preferís ver el QR como imagen en logs, copiá y pegá este data URL en el navegador):\n${dataUrl}\n`,
+          );
+        } catch {
+          console.log(
+            "\nNo se pudo generar el link del QR, revisá los logs anteriores.",
+          );
+        }
+        console.log(
+          "Escaneá el QR con tu WhatsApp (menú > Dispositivos vinculados).",
+        );
+      }
     }
     if (connection === "open") {
       console.log("Ruffus el Hornero conectado 🐦‍🔥");
-      // Headless: si seteaste BOT_PAIRING_PHONE, pedí un código de emparejamiento
-      // en vez de usar el QR (útil en el server, sin terminal visible).
-      const pairingPhone = process.env.BOT_PAIRING_PHONE;
-      if (pairingPhone) {
-        sock
-          .requestPairingCode(pairingPhone)
-          .then((code) =>
-            console.log(`Pairing code: ${code} (ingresalo en tu WhatsApp)`),
-          )
-          .catch((e) => console.error("Error pidiendo pairing code:", e));
-      }
     }
     if (connection === "close") {
       const status = (lastDisconnect?.error as Boom)?.output?.statusCode;
