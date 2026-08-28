@@ -4,11 +4,9 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Cargar variables del monorepo y del app antes de crear los clientes.
-// __dirname = apps/bot-whatsapp/src  ->  ../.env = apps/bot-whatsapp/.env
-dotenv.config({ path: path.resolve(process.cwd(), "../../.env.local") });
-dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
+// Cargar variables de entorno.
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
