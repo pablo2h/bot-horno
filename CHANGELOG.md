@@ -68,3 +68,91 @@
 - "Próximos eventos" — tabla existe pero no se consume todavía.
 - Volumen `.bot-auth/` en Railway para persistir sesión entre reinicios (evita re-escanear QR).
 - Posible migración a BSP oficial (360Dialog/Twilio) si escala el volumen — la lógica de menú no cambia, solo `index.ts`.
+
+---
+
+## Planificación — Mejoras pendientes
+
+### 1. Timeout por estado de conversación
+
+**Problema actual**: el bot guarda estado por número en memoria sin expire. Si alguien:
+1. Inicia conversación → estado `IDEA_AWAIT`
+2. Responde algo fuera del menú (ej: "buenas")
+3. El bot interpreta eso como el texto de la idea y guarda lead
+
+**Solución propuesta**:
+- Agregar timestamp a cada estado guardado: `{ state: 'IDEA_AWAIT', updatedAt: Date }`
+- Descartar estado si pasó X minutos (ej: 10 min)
+- Validar que el mensaje del usuario sea coherente con el estado actual antes de guardar lead
+
+**Prioridad**: Media
+**Esfuerzo**: Bajo
+
+---
+
+### 2. Reconocimiento de conversación retomadas
+
+**Problema actual**: si un lead se fue por un flujo pero no completó (ej: pidió "tengo una idea" pero no mandó el texto), no hay forma de retomar esa conversación.
+
+**Solución propuesta**:
+- Guardar en la tabla `whatsapp_leads` un campo `resumed_at` o `last_interaction_at`
+- Cuando el usuario vuelve a escribir, chequear si tiene un lead incompleto y mostrar un mensaje contextual: "Vi que tenías una idea sin completar. Querés continuar?"
+- Alternativa: cambiar el flujo para que sin importar cuándo escriba el usuario, si hay un lead incompleto se le ofrezca retomar
+
+**Prioridad**: Baja
+**Esfuerzo**: Medio
+
+---
+
+### 3. Confirmación antes de guardar lead
+
+**Problema actual**: el bot guarda el lead apenas recibe el mensaje, sin confirmar con el usuario.
+
+**Solución propuesta**:
+- Después de recibir el texto del lead, enviar un mensaje de confirmación: "Lo guardamos. Te contactamos pronto. ¿Algo más?"
+- Dos botones: "Sí, gracias" → vuelve al menú / "No, eso era todo" → vuelve al menú
+- Solo guardar en DB cuando el usuario confirma
+
+**Prioridad**: Media
+**Esfuerzo**: Bajo
+
+---
+
+### 4. Volumen persistente en Railway
+
+**Problema actual**: sin volumen montado, cada redeploy borra `.bot-auth/` y el bot pide re-escanear QR.
+
+**Solución**:
+- Railway: montar un volumen en `/app/.bot-auth`
+- O usar `BOT_PAIRING_PHONE` + pairing code (sin QR, más fácil para headless)
+
+**Prioridad**: Alta
+**Esfuerzo**: Bajo (config de Railway, no código)
+
+---
+
+### 5. Métricas y logging
+
+**Qué falta**:
+- Cuántos leads entran por opción (idea vs human)
+- Tasa de finalización vs abandono
+- Errores de Supabase o WhatsApp
+
+**Solución propuesta**:
+- Eventos en la tabla `whatsapp_leads`: columna `source` (menu/none), `conversation_id`
+- O usar Supabase Analytics / Logflare
+
+**Prioridad**: Baja
+**Esfuerzo**: Medio
+
+---
+
+### Resumen de prioridad
+
+| Mejora | Prioridad | Esfuerzo |
+|---|---|---|
+| Volumen persistente Railway | Alta | Bajo |
+| Timeout por estado | Media | Bajo |
+| Confirmación antes de guardar | Media | Bajo |
+| Eventos / métricas | Baja | Medio |
+| Retomar conversación | Baja | Medio |
