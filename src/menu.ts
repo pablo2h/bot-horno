@@ -225,6 +225,7 @@ export async function handleMessage(
   phone: string,
   name: string | undefined,
   raw: string,
+  source: "whatsapp" | "instagram" = "whatsapp",
 ): Promise<BotReply> {
   const clean = raw.trim().toLowerCase();
   const session = getSession(phone);
@@ -243,7 +244,7 @@ export async function handleMessage(
 
     case "IDEA_AWAIT": {
       await saveLead({
-        source: "whatsapp",
+        source,
         contact: phone,
         name,
         option: "idea",
@@ -258,7 +259,7 @@ export async function handleMessage(
 
     case "HUMAN_AWAIT": {
       await saveLead({
-        source: "whatsapp",
+        source,
         contact: phone,
         name,
         option: "human",

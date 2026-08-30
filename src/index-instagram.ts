@@ -117,7 +117,7 @@ async function sendMenu(igsid: string, reply: BotReply): Promise<void> {
       .slice(0, 13)
       .map((r) => ({
         content_type: "text" as const,
-        title: r.title.slice(0, 20),
+        title: r.title.slice(0, 30),
         payload: r.rowId,
       }));
 
@@ -133,7 +133,7 @@ async function sendMenu(igsid: string, reply: BotReply): Promise<void> {
 
 async function handleIgMessage(igsid: string, text: string, username?: string): Promise<void> {
   try {
-    const reply = await handleMessage(igsid, username, text);
+    const reply = await handleMessage(igsid, username, text, "instagram");
     if (!reply) return;
 
     await sendMenu(igsid, reply);
@@ -233,17 +233,17 @@ const server = http.createServer(async (req, res) => {
       if (senderId === IG.accountId) continue;
       if (change.message?.is_echo) continue;
 
-      if (change.message?.text) {
+      if (change.message?.quick_reply?.payload) {
+        const payload_text = change.message.quick_reply.payload;
+        console.log(`[ig] quick_reply="${payload_text}" from=${senderId}`);
+        handleIgMessage(senderId, payload_text).catch((err) => {
+          console.error("[ig] Unhandled error:", err);
+        });
+      } else if (change.message?.text) {
         const text = change.message.text;
         const username = change.sender?.username;
         console.log(`[ig] text="${text}" from=${senderId} to=${recipientId}`);
         handleIgMessage(senderId, text, username).catch((err) => {
-          console.error("[ig] Unhandled error:", err);
-        });
-      } else if (change.message?.quick_reply?.payload) {
-        const payload_text = change.message.quick_reply.payload;
-        console.log(`[ig] quick_reply="${payload_text}" from=${senderId}`);
-        handleIgMessage(senderId, payload_text).catch((err) => {
           console.error("[ig] Unhandled error:", err);
         });
       } else if (change.postback?.payload) {
