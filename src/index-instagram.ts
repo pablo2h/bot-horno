@@ -62,7 +62,8 @@ async function getWasSock(): Promise<WASocket> {
 }
 
 async function igGet(endpoint: string): Promise<any> {
-  const res = await fetch(`${IG.apiBase}${endpoint}&access_token=${IG.accessToken}`);
+  const sep = endpoint.includes("?") ? "&" : "?";
+  const res = await fetch(`${IG.apiBase}${endpoint}${sep}access_token=${IG.accessToken}`);
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`IG API error ${res.status}: ${err}`);
@@ -71,7 +72,8 @@ async function igGet(endpoint: string): Promise<any> {
 }
 
 async function igPost(endpoint: string, body: Record<string, unknown>): Promise<any> {
-  const res = await fetch(`${IG.apiBase}${endpoint}&access_token=${IG.accessToken}`, {
+  const sep = endpoint.includes("?") ? "&" : "?";
+  const res = await fetch(`${IG.apiBase}${endpoint}${sep}access_token=${IG.accessToken}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
