@@ -92,6 +92,27 @@ async function sendListMessage(
   }
 }
 
+async function sendMessageWithRetry(
+  sock: WASocket,
+  jid: string,
+  content: any,
+  retries = 2,
+): Promise<void> {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      await sock.sendMessage(jid, content);
+      return;
+    } catch (err) {
+      if (i < retries) {
+        console.log(`[wa] Send failed, retry ${i + 1}/${retries}...`);
+        await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 async function sendReply(
   sock: WASocket,
   jid: string,
@@ -100,7 +121,7 @@ async function sendReply(
   try {
     if (reply.sequential) {
       for (const msg of reply.sequential) {
-        await sock.sendMessage(jid, { text: msg });
+        await sendMessageWithRetry(sock, jid, { text: msg });
         await new Promise((r) => setTimeout(r, 1000));
       }
       return;
@@ -108,12 +129,12 @@ async function sendReply(
     if (reply.list) {
       if (isLidJid(jid)) {
         const text = listToText(reply.list);
-        await sock.sendMessage(jid, { text });
+        await sendMessageWithRetry(sock, jid, { text });
       } else {
         await sendListMessage(sock, jid, reply.list);
       }
     } else {
-      await sock.sendMessage(jid, { text: reply.text ?? "" });
+      await sendMessageWithRetry(sock, jid, { text: reply.text ?? "" });
     }
   } catch (err) {
     console.error("[wa] Error sending reply:", err);
@@ -122,7 +143,7 @@ async function sendReply(
       ? listToText(reply.list)
       : reply.text ?? "Error al enviar mensaje. Escribí *menu* para reiniciar.";
     try {
-      await sock.sendMessage(jid, { text: fallback });
+      await sendMessageWithRetry(sock, jid, { text: fallback });
     } catch {
       // Ignore fallback error
     }
@@ -133,11 +154,15 @@ async function connect(): Promise<void> {
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   const { version } = await fetchLatestBaileysVersion();
 
+  let isReady = false;
+
   const sock: WASocket = makeWASocket({
     version,
     auth: state,
     printQRInTerminal: false,
     browser: ["RuffusBot", "Chrome", "1.0"],
+    // Wait for full sync before marking as ready
+    syncFullHistory: false,
   });
 
   sock.ev.on("creds.update", saveCreds);
@@ -176,8 +201,14 @@ async function connect(): Promise<void> {
     }
     if (connection === "open") {
       console.log("Ruffus el Hornero conectado 🐦‍🔥");
+      // Wait a bit for full sync before processing messages
+      setTimeout(() => {
+        isReady = true;
+        console.log("[wa] Bot listo para procesar mensajes");
+      }, 3000);
     }
     if (connection === "close") {
+      isReady = false;
       const status = (lastDisconnect?.error as Boom)?.output?.statusCode;
       if (status === DisconnectReason.loggedOut) {
         console.log(
@@ -195,6 +226,12 @@ async function connect(): Promise<void> {
       if (m.key.fromMe) continue;
       const jid = m.key.remoteJid;
       if (!jid || jid.endsWith("@g.us") || !m.message) continue;
+
+      // Skip messages until bot is fully ready
+      if (!isReady) {
+        console.log("[wa] Bot no listo, ignorando mensaje");
+        continue;
+      }
 
       const single = (m.message as any)?.listResponse?.singleSelectReply;
       const selectedId: string | undefined =
@@ -224,7 +261,7 @@ async function connect(): Promise<void> {
       } catch (err) {
         console.error("Error manejando mensaje:", err);
         try {
-          await sock.sendMessage(jid, {
+          await sendMessageWithRetry(sock, jid, {
             text: "Ocurrió un error 🐦‍🔥. Escribí *menu* para reiniciar.",
           });
         } catch {

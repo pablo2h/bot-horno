@@ -35,10 +35,18 @@ export async function notifyTeam(
     const jid = num.includes("@")
       ? num
       : `${num.replace(/\D/g, "")}@s.whatsapp.net`;
-    try {
-      await sock.sendMessage(jid, { text: body });
-    } catch (e) {
-      console.error(`No pude notificar a ${num}:`, e);
+    for (let i = 0; i <= 2; i++) {
+      try {
+        await sock.sendMessage(jid, { text: body });
+        break;
+      } catch (e) {
+        if (i < 2) {
+          console.log(`[notify] Send failed to ${num}, retry ${i + 1}/2...`);
+          await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+        } else {
+          console.error(`No pude notificar a ${num}:`, e);
+        }
+      }
     }
   }
 }

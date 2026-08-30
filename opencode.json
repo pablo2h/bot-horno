@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "meta_developer_tools": {
+      "type": "local",
+      "command": [
+        "npx", "-y", "mcp-remote@0.1.49",
+        "https://mcp.facebook.com/devtools",
+        "--static-oauth-client-info",
+        "@C:\\Users\\pablo\\Desktop\\Archivos\\webs\\bot-horno\\meta-oauth-client.json"
+      ],
+      "enabled": true
+    }
+  }
+}
