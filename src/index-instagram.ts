@@ -8,11 +8,6 @@ dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
 
 import { handleMessage, type BotReply } from "./menu";
 import { saveLead } from "./db";
-import { notifyTeam, type LeadNotify } from "./notify-team";
-import { makeWASocket, useMultiFileAuthState } from "@whiskeysockets/baileys";
-import { Boom } from "@hapi/boom";
-import { DisconnectReason } from "@whiskeysockets/baileys";
-import type { WASocket } from "@whiskeysockets/baileys";
 
 const IG = {
   enabled: process.env.BOT_HORNO_IG_ENABLED === "true",
@@ -22,74 +17,74 @@ const IG = {
   accountId: process.env.BOT_HORNO_IG_ACCOUNT_ID ?? "",
   webhookPath:
     process.env.BOT_HORNO_IG_WEBHOOK_PATH ?? "/api/webhooks/instagram/horno",
-  apiBase: "https://graph.instagram.com/v26.0",
+  apiBase: "https://graph.instagram.com",
+  apiVersion: "v26.0",
 };
 
 if (!IG.enabled) {
-  console.log("Instagram bot disabled");
+  console.log("[ig] Instagram bot disabled");
   process.exit(0);
 }
 
 if (!IG.accessToken || !IG.accountId) {
-  console.error("Faltan INSTAGRAM_ACCESS_TOKEN o INSTAGRAM_ACCOUNT_ID");
-  process.exit(0);
+  console.error("[ig] Faltan BOT_HORNO_IG_ACCESS_TOKEN o BOT_HORNO_IG_ACCOUNT_ID");
+  process.exit(1);
 }
 
-const authDir = path.join(process.cwd(), ".bot-auth-ig");
-let waSock: WASocket | null = null;
+console.log("[ig] Config loaded:", {
+  apiBase: IG.apiBase,
+  apiVersion: IG.apiVersion,
+  accountId: IG.accountId,
+  webhookPath: IG.webhookPath,
+  tokenPrefix: IG.accessToken.slice(0, 10) + "...",
+});
 
-async function getWasSock(): Promise<WASocket> {
-  if (waSock) return waSock;
-  const { state, saveCreds } = await useMultiFileAuthState(authDir);
-  waSock = makeWASocket({
-    auth: state,
-    printQRInTerminal: false,
-    browser: ["RuffusBot", "Chrome", "1.0"],
-  });
-  waSock.ev.on("creds.update", saveCreds);
-  waSock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
-    if (connection === "open") {
-      console.log("WhatsApp para notificaciones conectado 🐦‍🔥");
-    }
-    if (connection === "close") {
-      const status = (lastDisconnect?.error as Boom)?.output?.statusCode;
-      if (status === DisconnectReason.loggedOut) {
-        waSock = null;
-      }
-    }
-  });
-  return waSock;
-}
+async function igApi(
+  method: "GET" | "POST",
+  endpoint: string,
+  body?: Record<string, unknown>,
+): Promise<any> {
+  const url = `${IG.apiBase}/${IG.apiVersion}${endpoint}`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${IG.accessToken}`,
+  };
 
-async function igGet(endpoint: string): Promise<any> {
-  const sep = endpoint.includes("?") ? "&" : "?";
-  const res = await fetch(`${IG.apiBase}${endpoint}${sep}access_token=${IG.accessToken}`);
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`IG API error ${res.status}: ${err}`);
+  const opts: RequestInit = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
+
+  const res = await fetch(url, opts);
+  const text = await res.text();
+  let json: any;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error(`IG API non-JSON response ${res.status}: ${text.slice(0, 300)}`);
   }
-  return res.json();
-}
 
-async function igPost(endpoint: string, body: Record<string, unknown>): Promise<any> {
-  const sep = endpoint.includes("?") ? "&" : "?";
-  const res = await fetch(`${IG.apiBase}${endpoint}${sep}access_token=${IG.accessToken}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`IG API error ${res.status}: ${err}`);
+    const errDetail = json?.error?.message ?? json?.message ?? text;
+    const errCode = json?.error?.code ?? "";
+    const errSub = json?.error?.error_subcode ?? "";
+    console.error(`[ig] API ERROR ${res.status}:`, {
+      code: errCode,
+      subcode: errSub,
+      message: errDetail,
+      fbtrace: json?.error?.fbtrace_id,
+    });
+    throw new Error(`IG API ${res.status} (${errCode}/${errSub}): ${errDetail}`);
   }
-  return res.json();
+
+  return json;
 }
 
 async function sendText(igsid: string, text: string): Promise<void> {
-  await igPost("/me/messages", {
+  console.log(`[ig] Sending text to ${igsid}:`, text.slice(0, 80));
+  const result = await igApi("POST", `/${IG.accountId}/messages`, {
     recipient: { id: igsid },
     message: { text },
   });
+  console.log(`[ig] Send OK, message_id:`, result?.message_id);
 }
 
 interface IgQuickReply {
@@ -103,13 +98,15 @@ async function sendQuickReplies(
   text: string,
   buttons: IgQuickReply[],
 ): Promise<void> {
-  await igPost("/me/messages", {
+  console.log(`[ig] Sending quick replies to ${igsid}:`, buttons.length, "buttons");
+  const result = await igApi("POST", `/${IG.accountId}/messages`, {
     recipient: { id: igsid },
     message: {
       text,
       quick_replies: buttons.slice(0, 13),
     },
   });
+  console.log(`[ig] Send OK, message_id:`, result?.message_id);
 }
 
 async function sendMenu(igsid: string, reply: BotReply): Promise<void> {
@@ -135,32 +132,28 @@ async function sendMenu(igsid: string, reply: BotReply): Promise<void> {
 }
 
 async function handleIgMessage(igsid: string, text: string, username?: string): Promise<void> {
-  const reply = await handleMessage(igsid, username, text);
-  if (!reply) return;
+  try {
+    const reply = await handleMessage(igsid, username, text);
+    if (!reply) return;
 
-  await sendMenu(igsid, reply);
+    await sendMenu(igsid, reply);
 
-  if (reply.lead) {
-    await saveLead({
-      source: "instagram",
-      contact: igsid,
-      name: reply.lead.name,
-      option: reply.lead.option,
-      message: reply.lead.message,
-      metadata: {},
-    });
-
-    const sock = await getWasSock();
-    if (sock) {
-      const leadNotify: LeadNotify = {
-        source: "instagram",
-        option: reply.lead.option,
-        name: reply.lead.name,
-        contact: igsid,
-        message: reply.lead.message,
-      };
-      await notifyTeam(sock, leadNotify);
+    if (reply.lead) {
+      try {
+        await saveLead({
+          source: "instagram",
+          contact: igsid,
+          name: reply.lead.name,
+          option: reply.lead.option,
+          message: reply.lead.message,
+          metadata: {},
+        });
+      } catch (leadErr) {
+        console.error("[ig] Error saving lead:", leadErr);
+      }
     }
+  } catch (err) {
+    console.error("[ig] Error in handleIgMessage:", err);
   }
 }
 
@@ -171,10 +164,6 @@ function verifySignature(rawBody: string, signature: string | null): boolean {
     .update(rawBody)
     .digest("hex");
   return `sha256=${expected}` === signature;
-}
-
-function parseWebhookBody(body: string): any {
-  return JSON.parse(body);
 }
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
@@ -188,10 +177,11 @@ const server = http.createServer(async (req, res) => {
     const challenge = url.searchParams.get("hub.challenge");
 
     if (mode === "subscribe" && token === IG.verifyToken) {
-      console.log("Webhook verificado por Meta");
+      console.log("[ig] Webhook verificado por Meta");
       res.writeHead(200);
       res.end(challenge ?? "ok");
     } else {
+      console.warn("[ig] Verification failed:", { mode, token });
       res.writeHead(403);
       res.end("Forbidden");
     }
@@ -199,14 +189,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && url.pathname === IG.webhookPath) {
-    const signature = req.headers["x-hub-signature-256"] ?? null;
     let rawBody = "";
     for await (const chunk of req) {
       rawBody += chunk;
     }
 
-    if (!verifySignature(rawBody, signature as string | null)) {
-      console.warn("Firma de webhook inválida");
+    const signature = req.headers["x-hub-signature-256"] ?? null;
+    if (signature && !verifySignature(rawBody, signature as string)) {
+      console.warn("[ig] Firma de webhook inválida");
       res.writeHead(403);
       res.end("Forbidden");
       return;
@@ -214,14 +204,15 @@ const server = http.createServer(async (req, res) => {
 
     let payload: any;
     try {
-      payload = parseWebhookBody(rawBody);
+      payload = JSON.parse(rawBody);
     } catch {
       res.writeHead(400);
       res.end("Bad Request");
       return;
     }
 
-    console.log("[ig] webhook received:", JSON.stringify(payload).slice(0, 500));
+    console.log("[ig] webhook object:", payload?.object);
+    console.log("[ig] webhook entry:", JSON.stringify(payload?.entry?.[0] ?? {}).slice(0, 400));
 
     const entry = payload?.entry?.[0];
     if (!entry) {
@@ -231,27 +222,37 @@ const server = http.createServer(async (req, res) => {
     }
 
     const events: any[] = entry.messaging ?? entry.changes ?? [];
+
     for (const event of events) {
       const change = event.value ?? event;
-      const igsid = change.sender?.id;
 
-      if (!igsid || igsid === IG.accountId) continue;
+      const senderId = change.sender?.id;
+      const recipientId = change.recipient?.id;
+
+      if (!senderId) continue;
+      if (senderId === IG.accountId) continue;
 
       if (change.message?.text) {
         const text = change.message.text;
         const username = change.sender?.username;
-        console.log(`[ig] text="${text}" from=${igsid}`);
-        handleIgMessage(igsid, text, username).catch((err) => {
-          console.error("[ig] Error:", err);
+        console.log(`[ig] text="${text}" from=${senderId} to=${recipientId}`);
+        handleIgMessage(senderId, text, username).catch((err) => {
+          console.error("[ig] Unhandled error:", err);
         });
-      } else if (event.postback?.payload) {
-        const payload_text = event.postback.payload;
-        console.log(`[ig] postback="${payload_text}" from=${igsid}`);
-        handleIgMessage(igsid, payload_text).catch((err) => {
-          console.error("[ig] Error:", err);
+      } else if (change.message?.quick_reply?.payload) {
+        const payload_text = change.message.quick_reply.payload;
+        console.log(`[ig] quick_reply="${payload_text}" from=${senderId}`);
+        handleIgMessage(senderId, payload_text).catch((err) => {
+          console.error("[ig] Unhandled error:", err);
+        });
+      } else if (change.postback?.payload) {
+        const payload_text = change.postback.payload;
+        console.log(`[ig] postback="${payload_text}" from=${senderId}`);
+        handleIgMessage(senderId, payload_text).catch((err) => {
+          console.error("[ig] Unhandled error:", err);
         });
       } else {
-        console.log("[ig] event sin text/postback:", JSON.stringify(event).slice(0, 300));
+        console.log("[ig] unhandled event:", JSON.stringify(change).slice(0, 200));
       }
     }
 
@@ -270,8 +271,9 @@ const server = http.createServer(async (req, res) => {
   res.end("Not found");
 });
 
-server.listen(PORT, () => {
-  console.log(`Bot IG listening on port ${PORT}`);
-  console.log(`Webhook path: ${IG.webhookPath}`);
-  console.log(`Necesitás que Meta pueda reachear este server en HTTPS para el webhook.`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`[ig] Bot IG listening on port ${PORT}`);
+  console.log(`[ig] Webhook path: ${IG.webhookPath}`);
+  console.log(`[ig] API: ${IG.apiBase}/${IG.apiVersion}`);
+  console.log(`[ig] Account ID: ${IG.accountId}`);
 });
