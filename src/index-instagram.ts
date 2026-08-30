@@ -230,15 +230,16 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    for (const event of entry.messaging ?? []) {
-      const senderId = event.sender?.id;
-      const igsid = event.sender?.id;
+    const events: any[] = entry.messaging ?? entry.changes ?? [];
+    for (const event of events) {
+      const change = event.value ?? event;
+      const igsid = change.sender?.id;
 
       if (!igsid || igsid === IG.accountId) continue;
 
-      if (event.message?.text) {
-        const text = event.message.text;
-        const username = event.sender?.username;
+      if (change.message?.text) {
+        const text = change.message.text;
+        const username = change.sender?.username;
         console.log(`[ig] text="${text}" from=${igsid}`);
         handleIgMessage(igsid, text, username).catch((err) => {
           console.error("[ig] Error:", err);
