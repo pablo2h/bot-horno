@@ -221,6 +221,8 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    console.log("[ig] webhook received:", JSON.stringify(payload).slice(0, 500));
+
     const entry = payload?.entry?.[0];
     if (!entry) {
       res.writeHead(200);
@@ -247,6 +249,8 @@ const server = http.createServer(async (req, res) => {
         handleIgMessage(igsid, payload_text).catch((err) => {
           console.error("[ig] Error:", err);
         });
+      } else {
+        console.log("[ig] event sin text/postback:", JSON.stringify(event).slice(0, 300));
       }
     }
 
