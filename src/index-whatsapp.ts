@@ -18,9 +18,22 @@ import {
   type WASocket,
 } from "@whiskeysockets/baileys";
 import * as Baileys from "@whiskeysockets/baileys";
-import { handleMessage, type ListSpec, type BotReply } from "./menu";
+import { type ListSpec, type BotReply, type HandleMessage } from "./menu";
+import { handleHornoMessage } from "./menu-horno";
+import { handleLaConveMessage } from "./menu-la-conve";
 import { notifyTeam, type LeadNotify } from "./notify-team";
 import { saveLead } from "./db";
+
+const COMPANY = process.env.BOT_COMPANY ?? "horno";
+
+const handlers: Record<string, HandleMessage> = {
+  horno: handleHornoMessage,
+  la_conve: handleLaConveMessage,
+};
+
+const handleMessage: HandleMessage = handlers[COMPANY] ?? handleHornoMessage;
+
+console.log(`[wa] Company: ${COMPANY}`);
 
 const authDir = path.join(process.cwd(), ".bot-auth");
 
@@ -78,6 +91,13 @@ async function sendReply(
   jid: string,
   reply: BotReply,
 ): Promise<void> {
+  if (reply.sequential) {
+    for (const msg of reply.sequential) {
+      await sock.sendMessage(jid, { text: msg });
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    return;
+  }
   if (reply.list) {
     if (isLidJid(jid)) {
       const text = listToText(reply.list);

@@ -10,4 +10,4 @@ RUN npm install --omit=dev && npm install -g tsx
 
 ENV NODE_ENV=production
 ENV BOT_ENTRYPOINT=whatsapp
-CMD ["npx", "tsx", "src/index-${BOT_ENTRYPOINT}.ts"]
+CMD npx tsx src/index-${BOT_ENTRYPOINT}.ts

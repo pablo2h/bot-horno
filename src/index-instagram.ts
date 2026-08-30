@@ -6,7 +6,9 @@ import crypto from "node:crypto";
 dotenv.config({ path: path.resolve(process.cwd(), "../../.env.local") });
 dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
 
-import { handleMessage, type BotReply } from "./menu";
+import { type BotReply, type HandleMessage } from "./menu";
+import { handleHornoMessage } from "./menu-horno";
+import { handleLaConveMessage } from "./menu-la-conve";
 import { saveLead } from "./db";
 
 const IG = {
@@ -20,6 +22,17 @@ const IG = {
   apiBase: "https://graph.instagram.com",
   apiVersion: "v26.0",
 };
+
+const COMPANY = process.env.BOT_COMPANY ?? "horno";
+
+const handlers: Record<string, HandleMessage> = {
+  horno: handleHornoMessage,
+  la_conve: handleLaConveMessage,
+};
+
+const handleMessage: HandleMessage = handlers[COMPANY] ?? handleHornoMessage;
+
+console.log(`[ig] Company: ${COMPANY}`);
 
 if (!IG.enabled) {
   console.log("[ig] Instagram bot disabled");
@@ -135,6 +148,14 @@ async function handleIgMessage(igsid: string, text: string, username?: string): 
   try {
     const reply = await handleMessage(igsid, username, text, "instagram");
     if (!reply) return;
+
+    if (reply.sequential) {
+      for (const msg of reply.sequential) {
+        await sendText(igsid, msg);
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      return;
+    }
 
     await sendMenu(igsid, reply);
 

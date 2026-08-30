@@ -9,6 +9,8 @@ dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+export const SCHEMA = process.env.BOT_SCHEMA ?? "horno";
+
 const SUPABASE_URL =
   process.env.BOT_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY =
@@ -62,7 +64,7 @@ export interface MiembroEquipo {
 
 export async function getServicios(): Promise<Servicio[]> {
   const { data, error } = await readClient
-    .schema("horno")
+    .schema(SCHEMA)
     .from("servicios")
     .select("slug,titulo,tagline,descripcion,icono")
     .order("titulo");
@@ -72,7 +74,7 @@ export async function getServicios(): Promise<Servicio[]> {
 
 export async function getProyectosActivos(): Promise<Proyecto[]> {
   const { data, error } = await readClient
-    .schema("horno")
+    .schema(SCHEMA)
     .from("proyectos")
     .select("slug,titulo,descripcion,estado,href")
     .eq("estado", "activo")
@@ -83,7 +85,7 @@ export async function getProyectosActivos(): Promise<Proyecto[]> {
 
 export async function getEquipoActivo(): Promise<MiembroEquipo[]> {
   const { data, error } = await readClient
-    .schema("horno")
+    .schema(SCHEMA)
     .from("equipo")
     .select("slug,nombre,rol,bio")
     .eq("state", "activo")
@@ -101,7 +103,7 @@ export async function saveLead(input: {
   metadata?: Record<string, unknown>;
 }): Promise<void> {
   const { error } = await writeClient
-    .schema("horno")
+    .schema(SCHEMA)
     .from("leads")
     .insert({
       source: input.source,

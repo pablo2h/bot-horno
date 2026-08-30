@@ -8,7 +8,7 @@ import {
   type MiembroEquipo,
 } from "./db";
 
-type State =
+export type State =
   | "ROOT"
   | "IDEA_AWAIT"
   | "HUMAN_AWAIT"
@@ -17,27 +17,12 @@ type State =
   | "EQUIPO"
   | "SUBMENU";
 
-interface Session {
+export interface Session {
   state: State;
+  submenu?: string;
   servicios?: Servicio[];
   proyectos?: Proyecto[];
   equipo?: MiembroEquipo[];
-}
-
-const sessions = new Map<string, Session>();
-const RUFFUS = "🐦‍🔥";
-
-function getSession(phone: string): Session {
-  let s = sessions.get(phone);
-  if (!s) {
-    s = { state: "ROOT" };
-    sessions.set(phone, s);
-  }
-  return s;
-}
-
-function trunc(s: string, n = 24): string {
-  return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
 export interface ListRow {
@@ -54,6 +39,7 @@ export interface ListSpec {
 export interface BotReply {
   text?: string;
   list?: ListSpec;
+  sequential?: string[];
   lead?: {
     contact: string;
     name?: string;
@@ -62,248 +48,263 @@ export interface BotReply {
   };
 }
 
-const text = (t: string): BotReply => ({ text: t });
-const list = (l: ListSpec): BotReply => ({ list: l });
+export interface MenuOption {
+  rowId: string;
+  title: string;
+  description?: string;
+  action?: "idea" | "human" | "submenu";
+  submenu?: string;
+  response?: string;
+}
 
-export function rootMenu(): BotReply {
+export interface SubmenuConfig {
+  title: string;
+  text: string;
+  options: MenuOption[];
+}
+
+export interface MenuConfig {
+  ruffus: string;
+  root: {
+    title: string;
+    text: string;
+    options: MenuOption[];
+  };
+  submenus: Record<string, SubmenuConfig>;
+  responses: Record<string, string | string[]>;
+  lead?: {
+    idea?: { prompt: string; thankYou: string };
+    human?: { prompt: string; thankYou: string };
+  };
+}
+
+const sessions = new Map<string, Session>();
+
+function getSession(phone: string): Session {
+  let s = sessions.get(phone);
+  if (!s) {
+    s = { state: "ROOT" };
+    sessions.set(phone, s);
+  }
+  return s;
+}
+
+export function trunc(s: string, n = 24): string {
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+export const text = (t: string): BotReply => ({ text: t });
+export const list = (l: ListSpec): BotReply => ({ list: l });
+
+function buildList(
+  title: string,
+  description: string,
+  rows: ListRow[],
+  buttonText = "Ver opciones",
+): BotReply {
   return list({
-    buttonText: "Ver opciones",
-    title: `${RUFFUS} Ruffus el Hornero`,
-    text: "Soy el pajarito del equipo que mueve la correspondencia. ¿Con qué te ayudo?",
-    sections: [
-      {
-        title: "Opciones",
-        rows: [
-          {
-            rowId: "idea",
-            title: "💡 Tengo una idea",
-            description: "Quiero colaborar",
-          },
-          { rowId: "eventos", title: "📅 Próximos eventos" },
-          { rowId: "submenu", title: "3️⃣ ¿Qué onda Horno?" },
-          { rowId: "hablar", title: "📞 Hablar con una persona" },
-        ],
-      },
-    ],
+    buttonText,
+    title,
+    text: description,
+    sections: [{ title: "Opciones", rows }],
   });
 }
 
-export function subMenu(): BotReply {
-  return list({
-    buttonText: "Ver opciones",
-    title: "3️⃣ ¿Qué onda Horno?",
-    text: "Somos un equipo que labura en ideas, contenido y tecnología. Elegí qué querés conocer:",
-    sections: [
-      {
-        title: "Conocé Horno",
-        rows: [
-          { rowId: "proyectos", title: "🚀 Proyectos activos" },
-          { rowId: "servicios", title: "📋 Servicios" },
-          { rowId: "equipo", title: "👥 Conocer al equipo" },
-        ],
-      },
-    ],
-  });
+function servicioDetail(ruffus: string, sv: Servicio): string {
+  return `${ruffus} *${sv.titulo}*\n${sv.tagline}\n\n${sv.descripcion}\n\nEscribí *menu* para volver.`;
 }
 
-function servicioDetail(sv: Servicio): string {
-  return `${RUFFUS} *${sv.titulo}*\n${sv.tagline}\n\n${sv.descripcion}\n\nEscribí *menu* para volver.`;
-}
-function proyectoDetail(p: Proyecto): string {
+function proyectoDetail(ruffus: string, p: Proyecto): string {
   const more = p.href ? `\nMás info: ${p.href}` : "";
-  return `${RUFFUS} *${p.titulo}*\n${p.descripcion}${more}\n\nEscribí *menu* para volver.`;
+  return `${ruffus} *${p.titulo}*\n${p.descripcion}${more}\n\nEscribí *menu* para volver.`;
 }
 
-async function handleRoot(
-  _s: Session,
-  _phone: string,
-  t: string,
-): Promise<BotReply> {
-  switch (t) {
-    case "idea":
-    case "1":
-      _s.state = "IDEA_AWAIT";
-      return text(
-        `${RUFFUS} ¡Me encanta! Contame tu idea y yo se la llevo volando al equipo. Escribila acá:`,
-      );
-    case "eventos":
-    case "2":
-      return text(
-        `${RUFFUS} 📅 *Próximos eventos*\n\nPor ahora no tenemos eventos publicados, pero estamos preparando novedades.\nSi querés que te avisemos, tocá *hablar* y te contacta el equipo. Escribí *menu* para volver.`,
-      );
-    case "submenu":
-    case "3":
-      _s.state = "SUBMENU";
-      return subMenu();
-    case "hablar":
-    case "4":
-      _s.state = "HUMAN_AWAIT";
-      return text(
-        `${RUFFUS} 📞 ¿Con qué querés que te contacte el equipo?\nDejá tu consulta (tu número ya lo tenemos) y te escribimos por este mismo chat.\nEscribí *menu* para cancelar.`,
-      );
-    default:
-      return rootMenu();
+function findOption(options: MenuOption[], input: string): MenuOption | undefined {
+  const idx = parseInt(input, 10);
+  if (!isNaN(idx) && idx >= 1 && idx <= options.length) {
+    return options[idx - 1];
   }
+  return options.find((o) => o.rowId === input);
 }
 
-async function handleSubMenu(
-  _s: Session,
-  _phone: string,
-  t: string,
-): Promise<BotReply> {
-  switch (t) {
-    case "proyectos":
-    case "1": {
-      const proyectos = await getProyectosActivos();
-      _s.proyectos = proyectos;
-      _s.state = "PROYECTOS";
-      if (proyectos.length === 0) {
-        return text(
-          `${RUFFUS} No tenemos proyectos activos en este momento. Escribí *menu* para volver.`,
-        );
-      }
-      return list({
-        buttonText: "Ver proyectos",
-        title: "🚀 Proyectos activos",
-        text: "Elegí un proyecto para ver el detalle.",
-        sections: [
-          {
-            title: "Proyectos",
-            rows: proyectos.map((p) => ({
-              rowId: `p:${p.slug}`,
-              title: trunc(p.titulo),
-              description: trunc(p.descripcion, 60),
-            })),
-          },
-        ],
-      });
+export function createHandler(config: MenuConfig) {
+  const { ruffus } = config;
+  const leadConfig = {
+    idea: {
+      prompt: `${ruffus} ¡Me encanta! Contame tu idea y yo se la llevo volando al equipo. Escribila acá:`,
+      thankYou: `${ruffus} ¡Gracias por la idea! Yo se la llevo al equipo y te escribimos pronto. Escribí *menu* para más opciones.`,
+      ...config.lead?.idea,
+    },
+    human: {
+      prompt: `${ruffus} 📞 ¿Con qué querés que te contacte el equipo?\nDejá tu consulta (tu número ya lo tenemos) y te escribimos por este mismo chat.\nEscribí *menu* para cancelar.`,
+      thankYou: `${ruffus} ¡Listo! Uno del equipo te va a escribir por acá. Gracias ${ruffus}`,
+      ...config.lead?.human,
+    },
+  };
+
+  return async function handleMessage(
+    phone: string,
+    name: string | undefined,
+    raw: string,
+    source: "whatsapp" | "instagram" = "whatsapp",
+  ): Promise<BotReply> {
+    const clean = raw.trim().toLowerCase();
+    const session = getSession(phone);
+
+    if (["menu", "0", "hola", "inicio", "menu."].includes(clean)) {
+      session.state = "ROOT";
+      return buildRoot();
     }
-    case "servicios":
-    case "2": {
-      const servicios = await getServicios();
-      _s.servicios = servicios;
-      _s.state = "SERVICIOS";
-      if (servicios.length === 0) {
-        return text(
-          `${RUFFUS} No tenemos servicios cargados todavía. Escribí *menu* para volver.`,
-        );
+
+    switch (session.state) {
+      case "ROOT":
+        return handleRoot(session, phone, clean);
+
+      case "SUBMENU":
+        return handleSubmenu(session, phone, clean);
+
+      case "IDEA_AWAIT": {
+        await saveLead({
+          source,
+          contact: phone,
+          name,
+          option: "idea",
+          message: raw.trim(),
+        });
+        session.state = "ROOT";
+        return {
+          text: leadConfig.idea.thankYou,
+          lead: { contact: phone, name, option: "idea", message: raw.trim() },
+        };
       }
-      return list({
-        buttonText: "Ver servicios",
-        title: "📋 Nuestros servicios",
-        text: "Elegí un servicio para ver el detalle.",
-        sections: [
-          {
-            title: "Servicios",
-            rows: servicios.map((sv) => ({
-              rowId: `s:${sv.slug}`,
-              title: trunc(sv.titulo),
-              description: trunc(sv.tagline, 60),
-            })),
-          },
-        ],
-      });
+
+      case "HUMAN_AWAIT": {
+        await saveLead({
+          source,
+          contact: phone,
+          name,
+          option: "human",
+          message: raw.trim(),
+        });
+        session.state = "ROOT";
+        return {
+          text: leadConfig.human.thankYou,
+          lead: { contact: phone, name, option: "human", message: raw.trim() },
+        };
+      }
+
+      case "SERVICIOS": {
+        const sv = clean.startsWith("s:")
+          ? session.servicios?.find((x) => x.slug === clean.slice(2))
+          : undefined;
+        if (sv) return text(servicioDetail(ruffus, sv));
+        const n = parseInt(clean, 10);
+        const byIndex = !isNaN(n) ? session.servicios?.[n - 1] : undefined;
+        if (byIndex) return text(servicioDetail(ruffus, byIndex));
+        return text(`${ruffus} Elegí una opción de la lista o escribí *menu* para volver.`);
+      }
+
+      case "PROYECTOS": {
+        const p = clean.startsWith("p:")
+          ? session.proyectos?.find((x) => x.slug === clean.slice(2))
+          : undefined;
+        if (p) return text(proyectoDetail(ruffus, p));
+        const n = parseInt(clean, 10);
+        const byIndex = !isNaN(n) ? session.proyectos?.[n - 1] : undefined;
+        if (byIndex) return text(proyectoDetail(ruffus, byIndex));
+        return text(`${ruffus} Elegí una opción de la lista o escribí *menu* para volver.`);
+      }
+
+      case "EQUIPO":
+        session.state = "ROOT";
+        return buildRoot();
+
+      default:
+        session.state = "ROOT";
+        return buildRoot();
     }
-    case "equipo":
-    case "3": {
-      const equipo = await getEquipoActivo();
-      _s.equipo = equipo;
-      _s.state = "EQUIPO";
-      const listTxt = equipo
-        .map((m) => `• ${m.nombre} — ${m.rol}`)
-        .join("\n");
-      return text(
-        `${RUFFUS} 🐦 *Equipo de Horno:*\n${listTxt}\n\nEscribí *menu* para volver.`,
+
+    function buildRoot(): BotReply {
+      return buildList(
+        `${ruffus} ${config.root.title}`,
+        config.root.text,
+        config.root.options,
       );
     }
-    default:
-      return subMenu();
-  }
+
+    function handleRoot(session: Session, phone: string, input: string): BotReply {
+      const opt = findOption(config.root.options, input);
+      if (!opt) return buildRoot();
+
+      if (opt.action === "idea") {
+        session.state = "IDEA_AWAIT";
+        return text(leadConfig.idea.prompt);
+      }
+      if (opt.action === "human") {
+        session.state = "HUMAN_AWAIT";
+        return text(leadConfig.human.prompt);
+      }
+      if (opt.action === "submenu" || opt.submenu) {
+        const key = opt.submenu ?? opt.rowId;
+        session.state = "SUBMENU";
+        session.submenu = key;
+        return buildSubmenu(key);
+      }
+      if (opt.response) {
+        const resp = config.responses[opt.response] ?? opt.response;
+        if (Array.isArray(resp)) {
+          return { sequential: resp };
+        }
+        return text(resp);
+      }
+      return buildRoot();
+    }
+
+    function handleSubmenu(session: Session, phone: string, input: string): BotReply {
+      const key = session.submenu ?? "default";
+      const sub = config.submenus[key];
+      if (!sub) {
+        session.state = "ROOT";
+        return buildRoot();
+      }
+
+      const opt = findOption(sub.options, input);
+      if (!opt) return buildSubmenu(key);
+
+      if (opt.submenu) {
+        session.state = "SUBMENU";
+        session.submenu = opt.submenu;
+        return buildSubmenu(opt.submenu);
+      }
+      if (opt.action === "idea") {
+        session.state = "IDEA_AWAIT";
+        return text(leadConfig.idea.prompt);
+      }
+      if (opt.action === "human") {
+        session.state = "HUMAN_AWAIT";
+        return text(leadConfig.human.prompt);
+      }
+      if (opt.response) {
+        const resp = config.responses[opt.response] ?? opt.response;
+        if (Array.isArray(resp)) {
+          return { sequential: resp };
+        }
+        return text(resp);
+      }
+      return buildSubmenu(key);
+    }
+
+    function buildSubmenu(key: string): BotReply {
+      const sub = config.submenus[key];
+      if (!sub) return buildRoot();
+      return buildList(sub.title, sub.text, sub.options);
+    }
+  };
 }
 
-export async function handleMessage(
+export type HandleMessage = (
   phone: string,
   name: string | undefined,
   raw: string,
-  source: "whatsapp" | "instagram" = "whatsapp",
-): Promise<BotReply> {
-  const clean = raw.trim().toLowerCase();
-  const session = getSession(phone);
-
-  if (["menu", "0", "hola", "inicio", "menu."].includes(clean)) {
-    session.state = "ROOT";
-    return rootMenu();
-  }
-
-  switch (session.state) {
-    case "ROOT":
-      return handleRoot(session, phone, clean);
-
-    case "SUBMENU":
-      return handleSubMenu(session, phone, clean);
-
-    case "IDEA_AWAIT": {
-      await saveLead({
-        source,
-        contact: phone,
-        name,
-        option: "idea",
-        message: raw.trim(),
-      });
-      session.state = "ROOT";
-      return {
-        text: `${RUFFUS} ¡Gracias por la idea! Yo se la llevo al equipo y te escribimos pronto. Escribí *menu* para más opciones.`,
-        lead: { contact: phone, name, option: "idea", message: raw.trim() },
-      };
-    }
-
-    case "HUMAN_AWAIT": {
-      await saveLead({
-        source,
-        contact: phone,
-        name,
-        option: "human",
-        message: raw.trim(),
-      });
-      session.state = "ROOT";
-      return {
-        text: `${RUFFUS} ¡Listo! Uno del equipo te va a escribir por acá. Gracias ${RUFFUS}`,
-        lead: { contact: phone, name, option: "human", message: raw.trim() },
-      };
-    }
-
-    case "SERVICIOS": {
-      const sv = clean.startsWith("s:")
-        ? session.servicios?.find((x) => x.slug === clean.slice(2))
-        : undefined;
-      if (sv) return text(servicioDetail(sv));
-      const n = parseInt(clean, 10);
-      const byIndex = !isNaN(n) ? session.servicios?.[n - 1] : undefined;
-      if (byIndex) return text(servicioDetail(byIndex));
-      return text(
-        `${RUFFUS} Elegí una opción de la lista o escribí *menu* para volver.`,
-      );
-    }
-
-    case "PROYECTOS": {
-      const p = clean.startsWith("p:")
-        ? session.proyectos?.find((x) => x.slug === clean.slice(2))
-        : undefined;
-      if (p) return text(proyectoDetail(p));
-      const n = parseInt(clean, 10);
-      const byIndex = !isNaN(n) ? session.proyectos?.[n - 1] : undefined;
-      if (byIndex) return text(proyectoDetail(byIndex));
-      return text(
-        `${RUFFUS} Elegí una opción de la lista o escribí *menu* para volver.`,
-      );
-    }
-
-    case "EQUIPO":
-      session.state = "ROOT";
-      return rootMenu();
-
-    default:
-      session.state = "ROOT";
-      return rootMenu();
-  }
-}
+  source?: "whatsapp" | "instagram",
+) => Promise<BotReply>;
