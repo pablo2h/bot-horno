@@ -253,6 +253,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/health") {
+    res.writeHead(200);
+    res.end("ok");
+    return;
+  }
+
   res.writeHead(404);
   res.end("Not found");
 });
