@@ -260,7 +260,7 @@ export function createHandler(config: MenuConfig) {
       return buildRoot();
     }
 
-    function handleSubmenu(session: Session, phone: string, input: string): BotReply {
+    async function handleSubmenu(session: Session, phone: string, input: string): Promise<BotReply> {
       const key = session.submenu ?? "default";
       const sub = config.submenus[key];
       if (!sub) {
@@ -284,6 +284,16 @@ export function createHandler(config: MenuConfig) {
         session.state = "HUMAN_AWAIT";
         return text(leadConfig.human.prompt);
       }
+      // DB-driven responses (proyectos, servicios, equipo)
+      if (opt.response === "proyectos") {
+        return await handleProyectos(session);
+      }
+      if (opt.response === "servicios") {
+        return await handleServicios(session);
+      }
+      if (opt.response === "equipo") {
+        return await handleEquipo(session);
+      }
       if (opt.response) {
         const resp = config.responses[opt.response] ?? opt.response;
         if (Array.isArray(resp)) {
@@ -298,6 +308,62 @@ export function createHandler(config: MenuConfig) {
       const sub = config.submenus[key];
       if (!sub) return buildRoot();
       return buildList(sub.title, sub.text, sub.options);
+    }
+
+    async function handleProyectos(session: Session): Promise<BotReply> {
+      const proyectos = await getProyectosActivos();
+      session.proyectos = proyectos;
+      session.state = "PROYECTOS";
+      if (proyectos.length === 0) {
+        return text(`${ruffus} No tenemos proyectos activos en este momento. Escribí *menu* para volver.`);
+      }
+      return list({
+        buttonText: "Ver proyectos",
+        title: "🚀 Proyectos activos",
+        text: "Elegí un proyecto para ver el detalle.",
+        sections: [
+          {
+            title: "Proyectos",
+            rows: proyectos.map((p) => ({
+              rowId: `p:${p.slug}`,
+              title: trunc(p.titulo),
+              description: trunc(p.descripcion, 60),
+            })),
+          },
+        ],
+      });
+    }
+
+    async function handleServicios(session: Session): Promise<BotReply> {
+      const servicios = await getServicios();
+      session.servicios = servicios;
+      session.state = "SERVICIOS";
+      if (servicios.length === 0) {
+        return text(`${ruffus} No tenemos servicios cargados todavía. Escribí *menu* para volver.`);
+      }
+      return list({
+        buttonText: "Ver servicios",
+        title: "📋 Nuestros servicios",
+        text: "Elegí un servicio para ver el detalle.",
+        sections: [
+          {
+            title: "Servicios",
+            rows: servicios.map((sv) => ({
+              rowId: `s:${sv.slug}`,
+              title: trunc(sv.titulo),
+              description: trunc(sv.tagline, 60),
+            })),
+          },
+        ],
+      });
+    }
+
+    async function handleEquipo(session: Session): Promise<BotReply> {
+      const equipo = await getEquipoActivo();
+      session.equipo = equipo;
+      session.state = "EQUIPO";
+      const listTxt = equipo.map((m) => `• ${m.nombre} — ${m.rol}`).join("\n");
+      return text(`${ruffus} 🐦 *Equipo de Horno:*\n${listTxt}\n\nEscribí *menu* para volver.`);
     }
   };
 }

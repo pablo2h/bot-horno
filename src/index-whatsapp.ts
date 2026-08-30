@@ -66,24 +66,30 @@ async function sendListMessage(
   jid: string,
   list: ListSpec,
 ): Promise<void> {
-  const msg = Baileys.WAProto.Message.fromObject({
-    listMessage: {
-      title: list.title,
-      description: list.text,
-      buttonText: list.buttonText,
-      listType: 1,
-      footerText: "Ruffus el Hornero 🐦‍🔥",
-      sections: list.sections.map((s) => ({
-        title: s.title,
-        rows: s.rows.map((r) => ({
-          title: r.title,
-          description: r.description ?? "",
-          rowId: r.rowId,
+  try {
+    const msg = Baileys.WAProto.Message.fromObject({
+      listMessage: {
+        title: list.title,
+        description: list.text,
+        buttonText: list.buttonText,
+        listType: 1,
+        footerText: "Ruffus el Hornero 🐦‍🔥",
+        sections: list.sections.map((s) => ({
+          title: s.title,
+          rows: s.rows.map((r) => ({
+            title: r.title,
+            description: r.description ?? "",
+            rowId: r.rowId,
+          })),
         })),
-      })),
-    },
-  });
-  await (sock as any).relayMessage(jid, msg, { messageId: genMsgId() });
+      },
+    });
+    await (sock as any).relayMessage(jid, msg, { messageId: genMsgId() });
+  } catch (err) {
+    console.error("[wa] List message failed, falling back to text:", err);
+    const text = listToText(list);
+    await sock.sendMessage(jid, { text });
+  }
 }
 
 async function sendReply(
@@ -91,22 +97,35 @@ async function sendReply(
   jid: string,
   reply: BotReply,
 ): Promise<void> {
-  if (reply.sequential) {
-    for (const msg of reply.sequential) {
-      await sock.sendMessage(jid, { text: msg });
-      await new Promise((r) => setTimeout(r, 1000));
+  try {
+    if (reply.sequential) {
+      for (const msg of reply.sequential) {
+        await sock.sendMessage(jid, { text: msg });
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      return;
     }
-    return;
-  }
-  if (reply.list) {
-    if (isLidJid(jid)) {
-      const text = listToText(reply.list);
-      await sock.sendMessage(jid, { text });
+    if (reply.list) {
+      if (isLidJid(jid)) {
+        const text = listToText(reply.list);
+        await sock.sendMessage(jid, { text });
+      } else {
+        await sendListMessage(sock, jid, reply.list);
+      }
     } else {
-      await sendListMessage(sock, jid, reply.list);
+      await sock.sendMessage(jid, { text: reply.text ?? "" });
     }
-  } else {
-    await sock.sendMessage(jid, { text: reply.text ?? "" });
+  } catch (err) {
+    console.error("[wa] Error sending reply:", err);
+    // Fallback: send plain text
+    const fallback = reply.list
+      ? listToText(reply.list)
+      : reply.text ?? "Error al enviar mensaje. Escribí *menu* para reiniciar.";
+    try {
+      await sock.sendMessage(jid, { text: fallback });
+    } catch {
+      // Ignore fallback error
+    }
   }
 }
 
@@ -189,7 +208,7 @@ async function connect(): Promise<void> {
       if (!text) continue;
 
       try {
-        console.log(`[wa-msg] text="${text}"`);
+        console.log(`[wa-msg] text="${text}" from=${jid}`);
         const reply = await handleMessage(jid, m.pushName ?? undefined, text);
         if (!reply) continue;
         await sendReply(sock, jid, reply);
@@ -204,10 +223,16 @@ async function connect(): Promise<void> {
         }
       } catch (err) {
         console.error("Error manejando mensaje:", err);
-        await sock.sendMessage(jid, {
-          text: "Ocurrió un error 🐦‍🔥. Escribí *menu* para reiniciar.",
-        });
+        try {
+          await sock.sendMessage(jid, {
+            text: "Ocurrió un error 🐦‍🔥. Escribí *menu* para reiniciar.",
+          });
+        } catch {
+          // Ignore send error
+        }
       }
+      // Small delay to avoid rate limiting
+      await new Promise((r) => setTimeout(r, 500));
     }
   });
 }
