@@ -17,17 +17,13 @@ import {
   type ConnectionState,
   type WASocket,
 } from "@whiskeysockets/baileys";
-// Baileys es CJS: `proto` no es un named export estaticamente detectable en ESM,
-// asi que lo tomamos del namespace (module.exports).
 import * as Baileys from "@whiskeysockets/baileys";
 import { handleMessage, type ListSpec, type BotReply } from "./menu";
+import { notifyTeam, type LeadNotify } from "./notify-team";
+import { saveLead } from "./db";
 
 const authDir = path.join(process.cwd(), ".bot-auth");
 
-// Baileys v6 no expone un branch de envío para listMessage en sendMessage
-// (caería en prepareWAMessageMedia y tiraría "Invalid media type"). Construimos
-// el proto directamente y lo relayeamos.
-// NOTA: en @whiskeysockets/baileys v6, las clases proto viven en WAProto (no proto).
 function genMsgId(): string {
   return randomBytes(8)
     .toString("base64")
@@ -62,7 +58,7 @@ async function sendListMessage(
       title: list.title,
       description: list.text,
       buttonText: list.buttonText,
-      listType: 1, // SINGLE_SELECT
+      listType: 1,
       footerText: "Ruffus el Hornero 🐦‍🔥",
       sections: list.sections.map((s) => ({
         title: s.title,
@@ -91,37 +87,6 @@ async function sendReply(
     }
   } else {
     await sock.sendMessage(jid, { text: reply.text ?? "" });
-  }
-}
-
-async function notifyTeam(
-  sock: WASocket,
-  lead: NonNullable<Awaited<ReturnType<typeof handleMessage>>["lead"]>,
-): Promise<void> {
-  const raw = process.env.BOT_NOTIFY_NUMBERS;
-  if (!raw) return;
-  const numbers = raw
-    .split(",")
-    .map((n) => n.trim())
-    .filter(Boolean);
-  if (numbers.length === 0) return;
-
-  const label = lead.option === "idea" ? "💡 Nueva idea" : "📞 Quiere hablar";
-  const who = lead.name ? `${lead.name} (${lead.phone})` : lead.phone;
-  const body =
-    `${label} de ${who}:\n` +
-    `${lead.message ?? "(sin mensaje)"}\n\n` +
-    `— Ruffus el Hornero 🐦‍🔥`;
-
-  for (const num of numbers) {
-    const jid = num.includes("@")
-      ? num
-      : `${num.replace(/\D/g, "")}@s.whatsapp.net`;
-    try {
-      await sock.sendMessage(jid, { text: body });
-    } catch (e) {
-      console.error(`No pude notificar a ${num}:`, e);
-    }
   }
 }
 
@@ -204,11 +169,19 @@ async function connect(): Promise<void> {
       if (!text) continue;
 
       try {
-        console.log(`[msg] text="${text}"`);
+        console.log(`[wa-msg] text="${text}"`);
         const reply = await handleMessage(jid, m.pushName ?? undefined, text);
         if (!reply) continue;
         await sendReply(sock, jid, reply);
-        if (reply.lead) await notifyTeam(sock, reply.lead);
+        if (reply.lead) {
+          await notifyTeam(sock, {
+            source: "whatsapp",
+            option: reply.lead.option,
+            name: reply.lead.name,
+            contact: reply.lead.contact,
+            message: reply.lead.message,
+          });
+        }
       } catch (err) {
         console.error("Error manejando mensaje:", err);
         await sock.sendMessage(jid, {

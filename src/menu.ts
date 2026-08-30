@@ -40,7 +40,6 @@ function trunc(s: string, n = 24): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
-// ---- Tipos de respuesta ----
 export interface ListRow {
   rowId: string;
   title: string;
@@ -56,7 +55,7 @@ export interface BotReply {
   text?: string;
   list?: ListSpec;
   lead?: {
-    phone: string;
+    contact: string;
     name?: string;
     option: "idea" | "human";
     message?: string;
@@ -243,20 +242,32 @@ export async function handleMessage(
       return handleSubMenu(session, phone, clean);
 
     case "IDEA_AWAIT": {
-      await saveLead({ phone, name, option: "idea", message: raw.trim() });
+      await saveLead({
+        source: "whatsapp",
+        contact: phone,
+        name,
+        option: "idea",
+        message: raw.trim(),
+      });
       session.state = "ROOT";
       return {
         text: `${RUFFUS} ¡Gracias por la idea! Yo se la llevo al equipo y te escribimos pronto. Escribí *menu* para más opciones.`,
-        lead: { phone, name, option: "idea", message: raw.trim() },
+        lead: { contact: phone, name, option: "idea", message: raw.trim() },
       };
     }
 
     case "HUMAN_AWAIT": {
-      await saveLead({ phone, name, option: "human", message: raw.trim() });
+      await saveLead({
+        source: "whatsapp",
+        contact: phone,
+        name,
+        option: "human",
+        message: raw.trim(),
+      });
       session.state = "ROOT";
       return {
         text: `${RUFFUS} ¡Listo! Uno del equipo te va a escribir por acá. Gracias ${RUFFUS}`,
-        lead: { phone, name, option: "human", message: raw.trim() },
+        lead: { contact: phone, name, option: "human", message: raw.trim() },
       };
     }
 

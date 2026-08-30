@@ -1,11 +1,15 @@
 {
-  "name": "bot-whatsapp",
+  "name": "bot-horno",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "start": "tsx src/index.ts",
+    "dev": "tsx src/index-whatsapp.ts",
+    "start": "tsx src/index-whatsapp.ts",
+    "dev:wa": "tsx src/index-whatsapp.ts",
+    "dev:ig": "tsx src/index-instagram.ts",
+    "start:wa": "tsx src/index-whatsapp.ts",
+    "start:ig": "tsx src/index-instagram.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

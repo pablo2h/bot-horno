@@ -4,43 +4,38 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Cargar variables de entorno.
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-// Preferimos BOT_* (proyecto bueno "stage" = obvnhcccovvruvpooyap).
-// Fallbacks: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY apunta al proyecto correcto.
 const SUPABASE_URL =
   process.env.BOT_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY =
   process.env.BOT_SUPABASE_ANON_KEY ||
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY ||
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.BOT_SUPABASE_SERVICE_ROLE_KEY; // solo explícito; el root apunta al proyecto muerto
+const SUPABASE_SERVICE_ROLE_KEY = process.env.BOT_SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   throw new Error(
-    "Faltan variables de Supabase: BOT_SUPABASE_URL / BOT_SUPABASE_ANON_KEY (o NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY).",
+    "Faltan variables de Supabase: BOT_SUPABASE_URL / BOT_SUPABASE_ANON_KEY.",
   );
 }
 
 const readClient: SupabaseClient = createClient(
   SUPABASE_URL,
   SUPABASE_ANON_KEY,
-  {
-    auth: { persistSession: false },
-  },
+  { auth: { persistSession: false } },
 );
 
-// Si hay service_role lo usamos para escribir; si no, escribimos con anon
-// (la tabla horno.whatsapp_leads tiene una política de insert para anon).
 const writeClient: SupabaseClient = SUPABASE_SERVICE_ROLE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false },
     })
   : readClient;
+
+export type LeadSource = "whatsapp" | "instagram";
 
 export interface Servicio {
   slug: string;
@@ -98,19 +93,38 @@ export async function getEquipoActivo(): Promise<MiembroEquipo[]> {
 }
 
 export async function saveLead(input: {
+  source: LeadSource;
+  contact: string;
+  name?: string;
+  option: "idea" | "human";
+  message?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  const { error } = await writeClient
+    .schema("horno")
+    .from("leads")
+    .insert({
+      source: input.source,
+      contact: input.contact,
+      name: input.name ?? null,
+      option: input.option,
+      message: input.message ?? null,
+      metadata: input.metadata ?? {},
+    });
+  if (error) throw error;
+}
+
+export async function saveWhatsappLead(input: {
   phone: string;
   name?: string;
   option: "idea" | "human";
   message?: string;
 }): Promise<void> {
-  const { error } = await writeClient
-    .schema("horno")
-    .from("whatsapp_leads")
-    .insert({
-      phone: input.phone,
-      name: input.name ?? null,
-      option: input.option,
-      message: input.message ?? null,
-    });
-  if (error) throw error;
+  return saveLead({
+    source: "whatsapp",
+    contact: input.phone,
+    name: input.name,
+    option: input.option,
+    message: input.message,
+  });
 }
