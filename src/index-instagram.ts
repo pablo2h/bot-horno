@@ -231,6 +231,7 @@ const server = http.createServer(async (req, res) => {
 
       if (!senderId) continue;
       if (senderId === IG.accountId) continue;
+      if (change.message?.is_echo) continue;
 
       if (change.message?.text) {
         const text = change.message.text;
